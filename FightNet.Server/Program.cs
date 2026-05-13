@@ -1,14 +1,11 @@
-﻿using System.Windows.Forms;
+using FightNet.Server;
 
-namespace FightNet.Server;
+var server = new GameServer(5000);
 
-internal static class Program
+Console.CancelKeyPress += (_, e) =>
 {
-    [STAThread]
-    static void Main()
-    {
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new Form1());
-    }
-}
+    e.Cancel = true;
+    server.StopAsync().Wait();
+};
+
+await server.StartAsync();
