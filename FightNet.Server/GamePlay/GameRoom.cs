@@ -16,19 +16,20 @@ public class GameRoom
     public bool IsFinished { get; private set; }
 
     private readonly ClientSession _player1;
-    private readonly ClientSession _player2;
+    private readonly ClientSession? _player2; // null when playing vs AI
+    private readonly AIBot? _aiBot;
     private readonly DbContext _database;
     private readonly GameState _state = new();
 
     private PlayerInputMessage? _p1Input;
-    private PlayerInputMessage? _p2Input;
     private readonly object _inputLock = new();
 
     private readonly CancellationTokenSource _cts = new();
     private DateTime _lastTick = DateTime.UtcNow;
 
-    // ── constructor ───────────────────────────────────────────────────────────
+    // ── constructors ──────────────────────────────────────────────────────────
 
+    // PvP
     public GameRoom(int roomId, ClientSession player1, ClientSession player2, DbContext database)
     {
         RoomId = roomId;
@@ -41,6 +42,21 @@ public class GameRoom
 
         _state.Player1Name = player1.Username ?? "Player1";
         _state.Player2Name = player2.Username ?? "Player2";
+    }
+
+    // vs AI
+    public GameRoom(int roomId, ClientSession player1, DbContext database)
+    {
+        RoomId = roomId;
+        _player1 = player1;
+        _player2 = null;
+        _aiBot = new AIBot();
+        _database = database;
+
+        _player1.CurrentRoom = this;
+
+        _state.Player1Name = player1.Username ?? "Player1";
+        _state.Player2Name = "BOT";
     }
 
     // ── start ─────────────────────────────────────────────────────────────────
@@ -83,12 +99,10 @@ public class GameRoom
             _state.TimeLeft -= (int)deltaTime;
 
             PlayerInputMessage? p1Input;
-            PlayerInputMessage? p2Input;
-            lock (_inputLock)
-            {
-                p1Input = _p1Input;
-                p2Input = _p2Input;
-            }
+            lock (_inputLock) { p1Input = _p1Input; }
+
+            // generate AI input when there is no real player 2
+            PlayerInputMessage? p2Input = _aiBot?.GetInput(_state.Player2, _state.Player1, deltaTime);
 
             _state.Update(p1Input, p2Input, deltaTime);
 
@@ -108,11 +122,8 @@ public class GameRoom
 
     public void HandlePlayerInput(ClientSession session, PlayerInputMessage input)
     {
-        lock (_inputLock)
-        {
-            if (session == _player1) _p1Input = input;
-            else if (session == _player2) _p2Input = input;
-        }
+        if (session != _player1) return;
+        lock (_inputLock) { _p1Input = input; }
     }
 
     // ── game over ─────────────────────────────────────────────────────────────
@@ -127,10 +138,10 @@ public class GameRoom
             Reason = _state.Player1.Health <= 0 || _state.Player2.Health <= 0 ? "KO" : "Timeout"
         });
 
-        // record in DB only if both players are authenticated
-        if (_player1.UserId > 0 && _player2.UserId > 0)
+        // record in DB only for PvP matches with authenticated players
+        if (_player2 != null && _player1.UserId > 0 && _player2.UserId > 0)
         {
-            bool p1Won = _state.WinnerName == _state.Player1Name;
+            bool p1Won   = _state.WinnerName == _state.Player1Name;
             int winnerId = p1Won ? _player1.UserId : _player2.UserId;
             int loserId  = p1Won ? _player2.UserId : _player1.UserId;
             int duration = GameState.GameDuration - _state.TimeLeft;
@@ -139,26 +150,27 @@ public class GameRoom
 
         IsFinished = true;
         _player1.CurrentRoom = null;
-        _player2.CurrentRoom = null;
+        if (_player2 != null) _player2.CurrentRoom = null;
     }
 
     // ── disconnect ────────────────────────────────────────────────────────────
 
     public void RemovePlayer(ClientSession session)
     {
-        string name = session.Username ?? "Unknown";
-        Console.WriteLine($"[ROOM {RoomId}] {name} disconnected");
+        Console.WriteLine($"[ROOM {RoomId}] {session.Username ?? "Unknown"} disconnected");
 
         _state.WinnerName = session == _player1 ? _state.Player2Name : _state.Player1Name;
         _state.Phase = GamePhase.GameOver;
         _cts.Cancel();
 
-        ClientSession other = session == _player1 ? _player2 : _player1;
-        _ = other.SendAsync(new GameOverMessage { WinnerName = _state.WinnerName, Reason = "Disconnect" });
+        // notify the other player if it's a real human
+        ClientSession? other = session == _player1 ? _player2 : _player1;
+        if (other != null)
+            _ = other.SendAsync(new GameOverMessage { WinnerName = _state.WinnerName, Reason = "Disconnect" });
 
         IsFinished = true;
         _player1.CurrentRoom = null;
-        _player2.CurrentRoom = null;
+        if (_player2 != null) _player2.CurrentRoom = null;
     }
 
     // ── broadcast ─────────────────────────────────────────────────────────────
@@ -168,11 +180,10 @@ public class GameRoom
         _ = BroadcastAsync(new ChatMessage { Username = sender.Username ?? "Unknown", Text = text });
     }
 
-    private async Task BroadcastAsync<T>(T message) where T : BaseMessage
+    private Task BroadcastAsync<T>(T message) where T : BaseMessage
     {
-        await Task.WhenAll(
-            _player1.SendAsync(message),
-            _player2.SendAsync(message)
-        );
+        return _player2 != null
+            ? Task.WhenAll(_player1.SendAsync(message), _player2.SendAsync(message))
+            : _player1.SendAsync(message);
     }
 }

@@ -19,6 +19,34 @@ public class LobbyManager
 
     // ── queue ─────────────────────────────────────────────────────────────────
 
+    public async Task JoinVsAiAsync(ClientSession session)
+    {
+        if (!session.IsLoggedIn)
+        {
+            await session.SendAsync(new ErrorMessage { Message = "You must be logged in to play." });
+            return;
+        }
+
+        int roomId;
+        GameRoom room;
+        lock (_lock)
+        {
+            roomId = _nextRoomId++;
+            room = new GameRoom(roomId, session, _database);
+            _activeRooms.Add(room);
+        }
+
+        Console.WriteLine($"[LOBBY] {session.Username} starting vs AI in room {roomId}");
+
+        await session.SendAsync(new MatchFoundMessage { OpponentName = "BOT", RoomId = roomId });
+
+        _ = Task.Run(async () =>
+        {
+            await room.StartAsync();
+            RemoveRoom(room);
+        });
+    }
+
     public async Task JoinQueueAsync(ClientSession session)
     {
         if (!session.IsLoggedIn)

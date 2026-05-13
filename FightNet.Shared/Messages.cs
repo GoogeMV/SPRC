@@ -54,6 +54,7 @@ public class LoginResponseMessage : BaseMessage
 public class JoinQueueMessage : BaseMessage
 {
     public override MessageType Type => MessageType.JoinQueue;
+    public bool VsAi { get; set; } = false;
 }
 
 public class LeaveQueueMessage : BaseMessage

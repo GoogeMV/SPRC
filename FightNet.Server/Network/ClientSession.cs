@@ -73,8 +73,11 @@ public class ClientSession
                 CurrentRoom?.HandlePlayerInput(this, input);
                 break;
 
-            case JoinQueueMessage:
-                await _server.LobbyManager.JoinQueueAsync(this);
+            case JoinQueueMessage join:
+                if (join.VsAi)
+                    await _server.LobbyManager.JoinVsAiAsync(this);
+                else
+                    await _server.LobbyManager.JoinQueueAsync(this);
                 break;
 
             case LeaveQueueMessage:
