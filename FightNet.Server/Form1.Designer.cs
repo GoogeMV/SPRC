@@ -1,4 +1,4 @@
-﻿namespace SPRC
+﻿namespace FightNet.Server
 {
     partial class Form1
     {

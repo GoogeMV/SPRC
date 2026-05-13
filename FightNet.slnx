@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FightNet.Server/FightNet.Server.csproj" Id="d46bef58-cc93-4938-a8a2-527d2cbe6ab3" />
+  <Project Path="FightNet.Shared/FightNet.Shared.csproj" Id="b77c0067-4279-4e07-a93a-cfa6a55efe9b" />
+  <Project Path="FightNet.Client/FightNet.Client.csproj" Id="fa46b621-f3e0-479f-b626-c4bc5a2ace94" />
+</Solution>
