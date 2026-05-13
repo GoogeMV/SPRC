@@ -39,6 +39,7 @@ public class LoginRequestMessage : BaseMessage
     public override MessageType Type => MessageType.LoginRequest;
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
+    public bool IsRegister { get; set; } = false;
 }
 
 public class LoginResponseMessage : BaseMessage

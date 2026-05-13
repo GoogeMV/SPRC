@@ -1,16 +1,21 @@
-﻿using FightNet.Shared;
+using FightNet.Server.Database;
 using FightNet.Server.Network;
+using FightNet.Shared;
 
 namespace FightNet.Server.Gameplay;
 
 public class LobbyManager
 {
-    // ── state ─────────────────────────────────────────────────────────────────
-
+    private readonly DbContext _database;
     private readonly Queue<ClientSession> _queue = new();
     private readonly List<GameRoom> _activeRooms = new();
     private readonly object _lock = new();
     private int _nextRoomId = 1;
+
+    public LobbyManager(DbContext database)
+    {
+        _database = database;
+    }
 
     // ── queue ─────────────────────────────────────────────────────────────────
 
@@ -18,10 +23,7 @@ public class LobbyManager
     {
         if (!session.IsLoggedIn)
         {
-            await session.SendAsync(new ErrorMessage
-            {
-                Message = "You must be logged in to join the queue."
-            });
+            await session.SendAsync(new ErrorMessage { Message = "You must be logged in to join the queue." });
             return;
         }
 
@@ -29,14 +31,11 @@ public class LobbyManager
 
         lock (_lock)
         {
-            // don't let the same player queue twice
             if (_queue.Contains(session))
                 return;
 
             if (_queue.Count > 0)
-            {
                 opponent = _queue.Dequeue();
-            }
             else
             {
                 _queue.Enqueue(session);
@@ -52,7 +51,6 @@ public class LobbyManager
     {
         lock (_lock)
         {
-            // Queue doesn't have a Remove, so rebuild without this session
             var remaining = _queue.Where(s => s != session).ToList();
             _queue.Clear();
             foreach (var s in remaining)
@@ -72,26 +70,15 @@ public class LobbyManager
         lock (_lock)
         {
             roomId = _nextRoomId++;
-            room = new GameRoom(roomId, player1, player2);
+            room = new GameRoom(roomId, player1, player2, _database);
             _activeRooms.Add(room);
         }
 
         Console.WriteLine($"[LOBBY] Match found! Room {roomId}: {player1.Username} vs {player2.Username}");
 
-        // notify both players
-        await player1.SendAsync(new MatchFoundMessage
-        {
-            OpponentName = player2.Username ?? "Unknown",
-            RoomId = roomId
-        });
+        await player1.SendAsync(new MatchFoundMessage { OpponentName = player2.Username ?? "Unknown", RoomId = roomId });
+        await player2.SendAsync(new MatchFoundMessage { OpponentName = player1.Username ?? "Unknown", RoomId = roomId });
 
-        await player2.SendAsync(new MatchFoundMessage
-        {
-            OpponentName = player1.Username ?? "Unknown",
-            RoomId = roomId
-        });
-
-        // start the room on its own task so lobby doesn't block
         _ = Task.Run(async () =>
         {
             await room.StartAsync();
@@ -101,23 +88,12 @@ public class LobbyManager
 
     private void RemoveRoom(GameRoom room)
     {
-        lock (_lock)
-        {
-            _activeRooms.Remove(room);
-        }
-
+        lock (_lock) { _activeRooms.Remove(room); }
         Console.WriteLine($"[LOBBY] Room {room.RoomId} cleaned up.");
     }
 
     // ── info ──────────────────────────────────────────────────────────────────
 
-    public int QueueCount
-    {
-        get { lock (_lock) { return _queue.Count; } }
-    }
-
-    public int ActiveRoomCount
-    {
-        get { lock (_lock) { return _activeRooms.Count; } }
-    }
+    public int QueueCount       { get { lock (_lock) { return _queue.Count; } } }
+    public int ActiveRoomCount  { get { lock (_lock) { return _activeRooms.Count; } } }
 }

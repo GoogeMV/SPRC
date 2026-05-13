@@ -1,4 +1,5 @@
-﻿using FightNet.Server.Network;
+using FightNet.Server.Database;
+using FightNet.Server.Network;
 using FightNet.Shared;
 
 namespace FightNet.Server.Gameplay;
@@ -7,7 +8,6 @@ public class GameRoom
 {
     // ── constants ─────────────────────────────────────────────────────────────
 
-    private const int TickRateMs = 16; // ~60fps
     private const int CountdownSecs = 3;
 
     // ── state ─────────────────────────────────────────────────────────────────
@@ -17,23 +17,24 @@ public class GameRoom
 
     private readonly ClientSession _player1;
     private readonly ClientSession _player2;
+    private readonly DbContext _database;
     private readonly GameState _state = new();
 
-    // latest input from each player, updated as packets arrive
     private PlayerInputMessage? _p1Input;
     private PlayerInputMessage? _p2Input;
     private readonly object _inputLock = new();
 
-    private CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _cts = new();
     private DateTime _lastTick = DateTime.UtcNow;
 
     // ── constructor ───────────────────────────────────────────────────────────
 
-    public GameRoom(int roomId, ClientSession player1, ClientSession player2)
+    public GameRoom(int roomId, ClientSession player1, ClientSession player2, DbContext database)
     {
         RoomId = roomId;
         _player1 = player1;
         _player2 = player2;
+        _database = database;
 
         _player1.CurrentRoom = this;
         _player2.CurrentRoom = this;
@@ -79,10 +80,8 @@ public class GameRoom
             float deltaTime = (float)(now - _lastTick).TotalSeconds;
             _lastTick = now;
 
-            // update timer
             _state.TimeLeft -= (int)deltaTime;
 
-            // get latest inputs (snapshot so we don't hold the lock during update)
             PlayerInputMessage? p1Input;
             PlayerInputMessage? p2Input;
             lock (_inputLock)
@@ -91,21 +90,17 @@ public class GameRoom
                 p2Input = _p2Input;
             }
 
-            // update game logic
             _state.Update(p1Input, p2Input, deltaTime);
 
-            // send state to both players
             await BroadcastAsync(_state.ToNetworkMessage());
 
-            // check for game over
             if (_state.Phase == GamePhase.GameOver)
             {
                 await HandleGameOverAsync();
                 break;
             }
 
-            // sleep until next tick
-            await Task.Delay(TickRateMs, _cts.Token);
+            await Task.Delay(GameConstants.TickRateMs, _cts.Token);
         }
     }
 
@@ -129,10 +124,18 @@ public class GameRoom
         await BroadcastAsync(new GameOverMessage
         {
             WinnerName = _state.WinnerName ?? "Nobody",
-            Reason = _state.Player1.Health <= 0 || _state.Player2.Health <= 0
-                ? "KO"
-                : "Timeout"
+            Reason = _state.Player1.Health <= 0 || _state.Player2.Health <= 0 ? "KO" : "Timeout"
         });
+
+        // record in DB only if both players are authenticated
+        if (_player1.UserId > 0 && _player2.UserId > 0)
+        {
+            bool p1Won = _state.WinnerName == _state.Player1Name;
+            int winnerId = p1Won ? _player1.UserId : _player2.UserId;
+            int loserId  = p1Won ? _player2.UserId : _player1.UserId;
+            int duration = GameState.GameDuration - _state.TimeLeft;
+            await _database.RecordMatchAsync(winnerId, loserId, duration);
+        }
 
         IsFinished = true;
         _player1.CurrentRoom = null;
@@ -146,21 +149,12 @@ public class GameRoom
         string name = session.Username ?? "Unknown";
         Console.WriteLine($"[ROOM {RoomId}] {name} disconnected");
 
-        // other player wins by default
-        _state.WinnerName = session == _player1
-            ? _state.Player2Name
-            : _state.Player1Name;
-
+        _state.WinnerName = session == _player1 ? _state.Player2Name : _state.Player1Name;
         _state.Phase = GamePhase.GameOver;
         _cts.Cancel();
 
-        // notify the other player
         ClientSession other = session == _player1 ? _player2 : _player1;
-        _ = other.SendAsync(new GameOverMessage
-        {
-            WinnerName = _state.WinnerName,
-            Reason = "Disconnect"
-        });
+        _ = other.SendAsync(new GameOverMessage { WinnerName = _state.WinnerName, Reason = "Disconnect" });
 
         IsFinished = true;
         _player1.CurrentRoom = null;

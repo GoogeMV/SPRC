@@ -1,6 +1,11 @@
 using FightNet.Server;
+using FightNet.Server.Database;
+using FightNet.Shared;
 
-var server = new GameServer(5000);
+using var db = new DbContext();
+await db.InitializeAsync();
+
+using var server = new GameServer(GameConstants.ServerPort, db);
 
 Console.CancelKeyPress += (_, e) =>
 {

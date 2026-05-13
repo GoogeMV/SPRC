@@ -13,7 +13,8 @@ public class ClientSession
     private bool _connected;
 
     public string? Username { get; private set; }
-    public bool IsLoggedIn => Username != null;
+    public int UserId { get; private set; } = -1;
+    public bool IsLoggedIn => UserId > 0;
     public Guid SessionId { get; } = Guid.NewGuid();
     public GameRoom? CurrentRoom { get; set; }
 
@@ -25,15 +26,15 @@ public class ClientSession
         _connected = true;
     }
 
-    public async Task StartAsync()
+    public async Task StartAsync(CancellationToken ct = default)
     {
         Console.WriteLine($"[SESSION] Started for {_tcpClient.Client.RemoteEndPoint}");
 
         try
         {
-            while (_connected)
+            while (_connected && !ct.IsCancellationRequested)
             {
-                string? json = await NetworkHelper.ReceiveAsync(_stream);
+                string? json = await NetworkHelper.ReceiveAsync(_stream, ct);
                 if (json == null)
                 {
                     Console.WriteLine($"[SESSION] Client {Username ?? "Unknown"} disconnected gracefully.");
@@ -45,6 +46,7 @@ public class ClientSession
                     await HandleMessageAsync(message);
             }
         }
+        catch (OperationCanceledException) { }
         catch (IOException)
         {
             Console.WriteLine($"[SESSION] Connection lost: {Username ?? "Unknown"}");
@@ -92,14 +94,32 @@ public class ClientSession
 
     private async Task HandleLoginAsync(LoginRequestMessage login)
     {
-        Username = login.Username;
-        Console.WriteLine($"[LOGIN] {Username} logged in.");
-
-        await SendAsync(new LoginResponseMessage
+        if (login.IsRegister)
         {
-            Success = true,
-            Message = $"Welcome, {Username}!"
-        });
+            int newId = await _server.Database.RegisterAsync(login.Username, login.Password);
+            if (newId < 0)
+            {
+                await SendAsync(new LoginResponseMessage { Success = false, Message = "Username already taken." });
+                return;
+            }
+            UserId = newId;
+            Username = login.Username;
+            Console.WriteLine($"[REGISTER] New account: {Username} (id={UserId})");
+            await SendAsync(new LoginResponseMessage { Success = true, Message = $"Account created! Welcome, {Username}!" });
+        }
+        else
+        {
+            int id = await _server.Database.LoginAsync(login.Username, login.Password);
+            if (id < 0)
+            {
+                await SendAsync(new LoginResponseMessage { Success = false, Message = "Invalid username or password." });
+                return;
+            }
+            UserId = id;
+            Username = login.Username;
+            Console.WriteLine($"[LOGIN] {Username} logged in (id={UserId})");
+            await SendAsync(new LoginResponseMessage { Success = true, Message = $"Welcome back, {Username}!" });
+        }
     }
 
     public async Task SendAsync(BaseMessage message)
