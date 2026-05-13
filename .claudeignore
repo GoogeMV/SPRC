@@ -1,0 +1,12 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Old .NET 4.7.2 Properties folder (excluded from build)
+FightNet.Client/Properties/
+
+# Generated designer/assemblyinfo files
+**/*.Designer.cs
+**/*.AssemblyAttributes.cs
+**/*.AssemblyInfo.cs
+**/*.GlobalUsings.g.cs

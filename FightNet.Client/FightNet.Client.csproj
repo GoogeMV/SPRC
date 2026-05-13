@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FightNet.Client</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- exclude old .NET 4.7.2 Properties folder -->
+    <Compile Remove="Properties\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FightNet.Shared\FightNet.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

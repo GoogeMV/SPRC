@@ -1,0 +1,19 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "FightNet.Client\\FightNet.Client.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "FightNet.Server\\FightNet.Server.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "FightNet.Shared\\FightNet.Shared.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
