@@ -2,6 +2,7 @@ using FightNet.Server.Gameplay;
 using FightNet.Shared;
 using System.IO;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 
 namespace FightNet.Server.Network;
 
@@ -25,6 +26,7 @@ public class ClientSession
         _stream = tcpClient.GetStream();
         _connected = true;
     }
+
 
     public async Task StartAsync(CancellationToken ct = default)
     {
@@ -61,8 +63,13 @@ public class ClientSession
         }
     }
 
+    private static bool IsValidUsername(string username)
+    {
+        return Regex.IsMatch(username, @"^[a-zA-Z0-9_]{3,20}$");
+    }
     private async Task HandleMessageAsync(BaseMessage message)
     {
+
         switch (message)
         {
             case LoginRequestMessage login:
@@ -97,6 +104,31 @@ public class ClientSession
 
     private async Task HandleLoginAsync(LoginRequestMessage login)
     {
+        login.Username = login.Username.Trim();
+
+        if (login.IsRegister)
+        {
+            if (!IsValidUsername(login.Username))
+            {
+                await SendAsync(new LoginResponseMessage
+                {
+                    Success = false,
+                    Message = "Username must contain 3-20 letters, numbers or _."
+                });
+                return;
+            }
+
+            if (login.Password.Length < 6)
+            {
+                await SendAsync(new LoginResponseMessage
+                {
+                    Success = false,
+                    Message = "Password must contain at least 6 characters."
+                });
+                return;
+            }
+        }
+
         if (login.IsRegister)
         {
             int newId = await _server.Database.RegisterAsync(login.Username, login.Password);

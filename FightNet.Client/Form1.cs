@@ -1,5 +1,6 @@
 using FightNet.Client.Network;
 using FightNet.Shared;
+using System.Text.RegularExpressions;
 
 namespace FightNet.Client;
 
@@ -143,12 +144,18 @@ public partial class Form1 : Form
 
         if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
         {
+            _lblLoginStatus.ForeColor = Color.OrangeRed;
             _lblLoginStatus.Text = "Fill in all fields.";
             return;
         }
 
+        if (isRegister && !ValidateRegisterInput(user, pass))
+        {
+            return;
+        }
+
         _lblLoginStatus.ForeColor = Color.White;
-        _lblLoginStatus.Text      = "Connecting...";
+        _lblLoginStatus.Text = "Connecting...";
 
         try
         {
@@ -157,15 +164,15 @@ public partial class Form1 : Form
 
             await _client.SendAsync(new LoginRequestMessage
             {
-                Username   = user,
-                Password   = pass,
+                Username = user,
+                Password = pass,
                 IsRegister = isRegister
             });
         }
         catch (Exception ex)
         {
             _lblLoginStatus.ForeColor = Color.OrangeRed;
-            _lblLoginStatus.Text      = $"Cannot connect: {ex.Message}";
+            _lblLoginStatus.Text = $"Cannot connect: {ex.Message}";
         }
     }
 
@@ -263,4 +270,23 @@ public partial class Form1 : Form
         Font      = new Font("Segoe UI", 10, FontStyle.Bold),
         Cursor    = Cursors.Hand
     };
+
+    private bool ValidateRegisterInput(string username, string password)
+    {
+        if (!Regex.IsMatch(username, @"^[a-zA-Z0-9_]{3,20}$"))
+        {
+            _lblLoginStatus.ForeColor = Color.OrangeRed;
+            _lblLoginStatus.Text = "Username must contain 3-20 letters, numbers or _.";
+            return false;
+        }
+
+        if (password.Length < 6)
+        {
+            _lblLoginStatus.ForeColor = Color.OrangeRed;
+            _lblLoginStatus.Text = "Password must contain at least 6 characters.";
+            return false;
+        }
+
+        return true;
+    }
 }
