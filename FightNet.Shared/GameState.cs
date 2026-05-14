@@ -37,17 +37,28 @@ public class GameState
     private const float MoveSpeed = 5f;
     private const float JumpForce = -15f;
     private const float Gravity = 0.8f;
+
     private const int PunchDamage = 10;
-    private const int PunchRange = 60; // pixels
+    private const int PunchRange = 60;
+    private const float PunchCooldownTime = 0.5f;
+
+    private const int KickDamage = 15;
+    private const int KickRange = 85;
+    private const float KickCooldownTime = 0.7f;
+
+    private const int AirBonusDamage = 5;
+    private const float KnockbackPunch = 25f;
+    private const float KnockbackKick = 40f;
+    private const float AirKnockbackBonus = 15f;
 
     // velocity (not sent over network, only server needs it)
     private float _p1VelY = 0f;
     private float _p2VelY = 0f;
 
-    // punch cooldown so you can't spam damage
     private float _p1PunchCooldown = 0f;
     private float _p2PunchCooldown = 0f;
-    private const float PunchCooldownTime = 0.5f; // seconds
+    private float _p1KickCooldown = 0f;
+    private float _p2KickCooldown = 0f;
 
     // ── init ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +86,8 @@ public class GameState
         _p2VelY = 0f;
         _p1PunchCooldown = 0f;
         _p2PunchCooldown = 0f;
+        _p1KickCooldown = 0f;
+        _p2KickCooldown = 0f;
         TimeLeft = GameDuration;
         Phase = GamePhase.Fighting;
         WinnerName = null;
@@ -88,6 +101,8 @@ public class GameState
 
         _p1PunchCooldown -= deltaTime;
         _p2PunchCooldown -= deltaTime;
+        _p1KickCooldown -= deltaTime;
+        _p2KickCooldown -= deltaTime;
 
         ApplyInput(Player1, p1Input, ref _p1VelY, deltaTime, isPlayer1: true);
         ApplyInput(Player2, p2Input, ref _p2VelY, deltaTime, isPlayer1: false);
@@ -104,6 +119,8 @@ public class GameState
 
         CheckPunch(Player1, Player2, p1Input, ref _p1PunchCooldown);
         CheckPunch(Player2, Player1, p2Input, ref _p2PunchCooldown);
+        CheckKick(Player1, Player2, p1Input, ref _p1KickCooldown);
+        CheckKick(Player2, Player1, p2Input, ref _p2KickCooldown);
 
         CheckWinner();
     }
@@ -112,41 +129,28 @@ public class GameState
 
     private void ApplyInput(PlayerState p, PlayerInputMessage? input, ref float velY, float deltaTime, bool isPlayer1)
     {
-        if (input == null)
-        {
-            p.Animation = "idle";
-            return;
-        }
+        if (input == null) { p.Animation = "idle"; return; }
 
-        // horizontal
-        if (input.Left)
-        {
-            p.X -= MoveSpeed;
-            p.Animation = "walk";
-        }
-        else if (input.Right)
-        {
-            p.X += MoveSpeed;
-            p.Animation = "walk";
-        }
-        else
-        {
-            p.Animation = "idle";
-        }
-
-        // jump — only if on the ground
         bool onGround = p.Y >= GroundY;
-        if (input.Jump && onGround)
-        {
-            velY = JumpForce;
-            p.Animation = "jump";
-        }
 
+        if (input.Left)  p.X -= MoveSpeed;
+        else if (input.Right) p.X += MoveSpeed;
+
+        if (input.Jump && onGround) velY = JumpForce;
+
+        // animation priority: block > attack > airborne > walk > idle
         if (input.Block)
             p.Animation = "block";
-
-        if (input.Punch)
-            p.Animation = "punch";
+        else if (input.Punch)
+            p.Animation = onGround ? "punch" : "air_punch";
+        else if (input.Kick)
+            p.Animation = onGround ? "kick" : "air_kick";
+        else if (!onGround)
+            p.Animation = "jump";
+        else if (input.Left || input.Right)
+            p.Animation = "walk";
+        else
+            p.Animation = "idle";
     }
 
     private void ApplyGravity(PlayerState p, ref float velY)
@@ -176,19 +180,45 @@ public class GameState
         float dist = MathF.Abs(attacker.X - defender.X);
         if (dist > PunchRange) return;
 
-        // blocked?
-        if (defender.Animation == "block")
-        {
-            // no damage, just reset cooldown
-            cooldown = PunchCooldownTime;
-            return;
-        }
-
-        defender.Health -= PunchDamage;
-        defender.Animation = "hurt";
         cooldown = PunchCooldownTime;
 
-        if (defender.Health < 0) defender.Health = 0;
+        if (defender.Animation == "block") return;
+
+        bool airAttack = attacker.Y < GroundY;
+        int damage = PunchDamage + (airAttack ? AirBonusDamage : 0);
+        float knockback = KnockbackPunch + (airAttack ? AirKnockbackBonus : 0f);
+
+        defender.Health = Math.Max(0, defender.Health - damage);
+        defender.Animation = "hurt";
+
+        float dir = defender.X >= attacker.X ? 1f : -1f;
+        defender.X += dir * knockback;
+        ClampToWalls(defender);
+    }
+
+    private void CheckKick(PlayerState attacker, PlayerState defender,
+                           PlayerInputMessage? input, ref float cooldown)
+    {
+        if (input == null || !input.Kick) return;
+        if (cooldown > 0) return;
+
+        float dist = MathF.Abs(attacker.X - defender.X);
+        if (dist > KickRange) return;
+
+        cooldown = KickCooldownTime;
+
+        if (defender.Animation == "block") return;
+
+        bool airAttack = attacker.Y < GroundY;
+        int damage = KickDamage + (airAttack ? AirBonusDamage : 0);
+        float knockback = KnockbackKick + (airAttack ? AirKnockbackBonus : 0f);
+
+        defender.Health = Math.Max(0, defender.Health - damage);
+        defender.Animation = "hurt";
+
+        float dir = defender.X >= attacker.X ? 1f : -1f;
+        defender.X += dir * knockback;
+        ClampToWalls(defender);
     }
 
     private void CheckWinner()

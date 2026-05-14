@@ -12,13 +12,17 @@ public class AIBot
         _jumpCooldown -= deltaTime;
 
         float dist     = MathF.Abs(self.X - opponent.X);
-        bool inRange   = dist < 70f;
+        bool inRange   = dist < 85f;
 
         bool moveLeft  = self.X > opponent.X + 5;
         bool moveRight = self.X < opponent.X - 5;
-        bool punch     = inRange;
-        bool jump      = _jumpCooldown <= 0 && _rng.Next(100) < 3; // ~3% per tick
-        bool block     = !punch && _rng.Next(100) < 2;             // rar, doar când nu dă punch
+
+        // randomly pick punch or kick when in range; kick slightly preferred at distance
+        bool punch = inRange && _rng.Next(100) < 50;
+        bool kick  = inRange && !punch;
+
+        bool jump  = _jumpCooldown <= 0 && _rng.Next(100) < 3;
+        bool block = !inRange && _rng.Next(100) < 2;
 
         if (jump) _jumpCooldown = 2f;
 
@@ -27,6 +31,7 @@ public class AIBot
             Left  = moveLeft,
             Right = moveRight,
             Punch = punch,
+            Kick  = kick,
             Jump  = jump,
             Block = block
         };

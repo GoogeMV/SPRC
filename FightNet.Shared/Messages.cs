@@ -78,6 +78,7 @@ public class PlayerInputMessage : BaseMessage
     public bool Right { get; set; }
     public bool Jump { get; set; }
     public bool Punch { get; set; }
+    public bool Kick { get; set; }
     public bool Block { get; set; }
 }
 
