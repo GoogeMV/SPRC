@@ -170,7 +170,8 @@ public partial class Form1 : Form
             BorderStyle      = BorderStyle.FixedSingle,
             Location         = new Point(570, 31),
             Size             = new Size(172, 26),
-            PlaceholderText  = "Type a message..."
+            PlaceholderText  = "Type a message...",
+            TabStop          = false
         };
         _chatInput.KeyDown += async (_, e) =>
         {
@@ -291,7 +292,8 @@ public partial class Form1 : Form
                 _inGame = true;
                 ClientSize = new Size(820, 630);
                 ShowPanel(_gamePanel);
-                _gameCanvas.Focus();
+                this.Activate();
+                this.ActiveControl = null;
                 _inputTimer.Start();
                 break;
 
