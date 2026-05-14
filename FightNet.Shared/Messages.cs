@@ -88,6 +88,8 @@ public class GameStateUpdateMessage : BaseMessage
     public PlayerState Player1 { get; set; } = new();
     public PlayerState Player2 { get; set; } = new();
     public int TimeLeft { get; set; }
+    public string Player1Name { get; set; } = "";
+    public string Player2Name { get; set; } = "";
 }
 
 public class GameOverMessage : BaseMessage

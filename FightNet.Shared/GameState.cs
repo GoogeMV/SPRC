@@ -250,7 +250,9 @@ public class GameState
         {
             Player1 = Player1,
             Player2 = Player2,
-            TimeLeft = TimeLeft
+            TimeLeft = TimeLeft,
+            Player1Name = Player1Name,
+            Player2Name = Player2Name
         };
     }
 }

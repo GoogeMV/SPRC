@@ -1,3 +1,4 @@
+using FightNet.Client.Game;
 using FightNet.Client.Network;
 using FightNet.Shared;
 using System.Text.RegularExpressions;
@@ -26,6 +27,15 @@ public partial class Form1 : Form
     // lobby controls
     private Label _lblLobbyStatus = null!;
 
+    // game
+    private Panel      _gamePanel      = null!;
+    private GameCanvas _gameCanvas     = null!;
+    private readonly HashSet<Keys> _pressedKeys = new();
+    private System.Windows.Forms.Timer _inputTimer = null!;
+    private string _localUsername = "";
+    private bool   _inGame        = false;
+    private bool   _gameOver      = false;
+
     // ── init ──────────────────────────────────────────────────────────────────
 
     public Form1()
@@ -45,6 +55,14 @@ public partial class Form1 : Form
         BuildLoginPanel();
         BuildMenuPanel();
         BuildLobbyPanel();
+        BuildGamePanel();
+
+        KeyPreview = true;
+        _inputTimer = new System.Windows.Forms.Timer { Interval = 16 };
+        _inputTimer.Tick += async (_, _) =>
+        {
+            try { await SendInputAsync(); } catch { }
+        };
 
         ShowPanel(_loginPanel);
     }
@@ -114,6 +132,13 @@ public partial class Form1 : Form
         btnQuit.Click += (_, _) => Application.Exit();
 
         _menuPanel.Controls.AddRange([_lblWelcome, btnPvP, btnAI, btnQuit]);
+    }
+
+    private void BuildGamePanel()
+    {
+        _gamePanel = MakePanel();
+        _gameCanvas = new GameCanvas { Dock = DockStyle.Fill };
+        _gamePanel.Controls.Add(_gameCanvas);
     }
 
     private void BuildLobbyPanel()
@@ -206,7 +231,26 @@ public partial class Form1 : Form
 
             case MatchFoundMessage m:
                 _lblLobbyStatus.Text = $"Match found! vs {m.OpponentName} — starting...";
-                // TODO (prez 2): open game panel
+                _localUsername = _txtUsername.Text.Trim();
+                _gameCanvas.SetLocalUser(_localUsername);
+                _gameCanvas.Reset();
+                _gameOver = false;
+                _inGame = true;
+                ClientSize = new Size(820, 540);
+                ShowPanel(_gamePanel);
+                _gameCanvas.Focus();
+                _inputTimer.Start();
+                break;
+
+            case GameStateUpdateMessage gs:
+                _gameCanvas.UpdateState(gs);
+                break;
+
+            case GameOverMessage go:
+                _inGame = false;
+                _gameOver = true;
+                _inputTimer.Stop();
+                _gameCanvas.ShowGameOver(go.WinnerName);
                 break;
 
             case ErrorMessage e:
@@ -270,6 +314,46 @@ public partial class Form1 : Form
         Font      = new Font("Segoe UI", 10, FontStyle.Bold),
         Cursor    = Cursors.Hand
     };
+
+    // ── game input ────────────────────────────────────────────────────────────
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        _pressedKeys.Add(e.KeyCode);
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        _pressedKeys.Remove(e.KeyCode);
+        if (e.KeyCode == Keys.Escape && _gameOver)
+            ReturnToMenu();
+        base.OnKeyUp(e);
+    }
+
+    private async Task SendInputAsync()
+    {
+        if (!_inGame || !_client.IsConnected) return;
+        await _client.SendAsync(new PlayerInputMessage
+        {
+            Left  = _pressedKeys.Contains(Keys.A)    || _pressedKeys.Contains(Keys.Left),
+            Right = _pressedKeys.Contains(Keys.D)    || _pressedKeys.Contains(Keys.Right),
+            Jump  = _pressedKeys.Contains(Keys.W)    || _pressedKeys.Contains(Keys.Up),
+            Punch = _pressedKeys.Contains(Keys.J),
+            Kick  = _pressedKeys.Contains(Keys.K),
+            Block = _pressedKeys.Contains(Keys.S)    || _pressedKeys.Contains(Keys.Down),
+        });
+    }
+
+    private void ReturnToMenu()
+    {
+        _inGame   = false;
+        _gameOver = false;
+        _inputTimer.Stop();
+        _pressedKeys.Clear();
+        ClientSize = new Size(480, 340);
+        ShowPanel(_menuPanel);
+    }
 
     private bool ValidateRegisterInput(string username, string password)
     {
