@@ -28,8 +28,10 @@ public partial class Form1 : Form
     private Label _lblLobbyStatus = null!;
 
     // game
-    private Panel      _gamePanel      = null!;
-    private GameCanvas _gameCanvas     = null!;
+    private Panel        _gamePanel    = null!;
+    private GameCanvas   _gameCanvas   = null!;
+    private RichTextBox  _chatLog      = null!;
+    private TextBox      _chatInput    = null!;
     private readonly HashSet<Keys> _pressedKeys = new();
     private System.Windows.Forms.Timer _inputTimer = null!;
     private string _localUsername = "";
@@ -137,8 +139,58 @@ public partial class Form1 : Form
     private void BuildGamePanel()
     {
         _gamePanel = MakePanel();
+
+        // chat strip ──────────────────────────────────────────────────────────
+        var chatStrip = new Panel
+        {
+            Dock      = DockStyle.Bottom,
+            Height    = 88,
+            BackColor = Color.FromArgb(18, 18, 38),
+            Padding   = new Padding(6, 4, 6, 4)
+        };
+
+        _chatLog = new RichTextBox
+        {
+            ReadOnly    = true,
+            BackColor   = Color.FromArgb(12, 12, 28),
+            ForeColor   = Color.LightGray,
+            Font        = new Font("Segoe UI", 8.5f),
+            ScrollBars  = RichTextBoxScrollBars.Vertical,
+            BorderStyle = BorderStyle.None,
+            Location    = new Point(6, 4),
+            Size        = new Size(556, 80),
+            WordWrap    = true
+        };
+
+        _chatInput = new TextBox
+        {
+            BackColor        = Color.FromArgb(35, 35, 60),
+            ForeColor        = Color.White,
+            Font             = new Font("Segoe UI", 9),
+            BorderStyle      = BorderStyle.FixedSingle,
+            Location         = new Point(570, 31),
+            Size             = new Size(172, 26),
+            PlaceholderText  = "Type a message..."
+        };
+        _chatInput.KeyDown += async (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                await SendChatAsync();
+            }
+        };
+
+        var btnSend = MakeButton("Send", 750, 26, 58);
+        btnSend.Click += async (_, _) => await SendChatAsync();
+
+        chatStrip.Controls.AddRange([_chatLog, _chatInput, btnSend]);
+
+        // canvas (Fill takes remaining space after Bottom is reserved) ─────────
         _gameCanvas = new GameCanvas { Dock = DockStyle.Fill };
+
         _gamePanel.Controls.Add(_gameCanvas);
+        _gamePanel.Controls.Add(chatStrip);
     }
 
     private void BuildLobbyPanel()
@@ -234,9 +286,10 @@ public partial class Form1 : Form
                 _localUsername = _txtUsername.Text.Trim();
                 _gameCanvas.SetLocalUser(_localUsername);
                 _gameCanvas.Reset();
+                _chatLog.Clear();
                 _gameOver = false;
                 _inGame = true;
-                ClientSize = new Size(820, 540);
+                ClientSize = new Size(820, 630);
                 ShowPanel(_gamePanel);
                 _gameCanvas.Focus();
                 _inputTimer.Start();
@@ -253,6 +306,10 @@ public partial class Form1 : Form
                 _gameCanvas.ShowGameOver(go.WinnerName);
                 break;
 
+            case ChatMessage chat:
+                AppendChat(chat.Username, chat.Text);
+                break;
+
             case ErrorMessage e:
                 MessageBox.Show(e.Message, "Server", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 break;
@@ -262,6 +319,16 @@ public partial class Form1 : Form
     private void OnDisconnected()
     {
         if (InvokeRequired) { Invoke(OnDisconnected); return; }
+
+        if (_inGame || _gameOver)
+        {
+            _inGame   = false;
+            _gameOver = false;
+            _inputTimer.Stop();
+            _pressedKeys.Clear();
+            ClientSize = new Size(480, 340);
+        }
+
         _lblLoginStatus.ForeColor = Color.OrangeRed;
         _lblLoginStatus.Text      = "Disconnected from server.";
         ShowPanel(_loginPanel);
@@ -319,7 +386,8 @@ public partial class Form1 : Form
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        _pressedKeys.Add(e.KeyCode);
+        if (!_chatInput.Focused)
+            _pressedKeys.Add(e.KeyCode);
         base.OnKeyDown(e);
     }
 
@@ -343,6 +411,25 @@ public partial class Form1 : Form
             Kick  = _pressedKeys.Contains(Keys.K),
             Block = _pressedKeys.Contains(Keys.S)    || _pressedKeys.Contains(Keys.Down),
         });
+    }
+
+    private async Task SendChatAsync()
+    {
+        string text = _chatInput.Text.Trim();
+        if (string.IsNullOrEmpty(text) || !_client.IsConnected) return;
+        await _client.SendAsync(new ChatMessage { Username = _localUsername, Text = text });
+        _chatInput.Clear();
+    }
+
+    private void AppendChat(string username, string text)
+    {
+        _chatLog.SelectionStart  = _chatLog.TextLength;
+        _chatLog.SelectionLength = 0;
+        _chatLog.SelectionColor  = username == _localUsername ? Color.Gold : Color.DodgerBlue;
+        _chatLog.AppendText($"{username}: ");
+        _chatLog.SelectionColor  = Color.LightGray;
+        _chatLog.AppendText($"{text}\n");
+        _chatLog.ScrollToCaret();
     }
 
     private void ReturnToMenu()
